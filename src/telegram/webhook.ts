@@ -61,8 +61,10 @@ function resolveWebhookPublicUrl(params: {
   return `http://${fallbackHost}:${params.port}${params.path}`;
 }
 
+import type { CreateTelegramBotResult } from "./bot.js";
+
 async function initializeTelegramWebhookBot(params: {
-  bot: ReturnType<typeof createTelegramBot>;
+  bot: CreateTelegramBotResult["bot"];
   runtime: RuntimeEnv;
   abortSignal?: AbortSignal;
 }) {
@@ -101,7 +103,7 @@ export async function startTelegramWebhook(opts: {
   }
   const runtime = opts.runtime ?? defaultRuntime;
   const diagnosticsEnabled = isDiagnosticsEnabled(opts.config);
-  const bot = createTelegramBot({
+  const { bot, execApprovalHandler } = createTelegramBot({
     token: opts.token,
     runtime,
     proxyFetch: opts.fetch,
@@ -252,6 +254,15 @@ export async function startTelegramWebhook(opts: {
     throw err;
   }
 
+  // Start exec approval handler after webhook is set
+  if (execApprovalHandler) {
+    try {
+      await execApprovalHandler.start();
+    } catch (err) {
+      runtime.log?.(`[telegram] exec approvals start failed: ${formatErrorMessage(err)}`);
+    }
+  }
+
   runtime.log?.(`webhook local listener on http://${host}:${boundPort}${path}`);
   runtime.log?.(`webhook advertised to telegram on ${publicUrl}`);
 
@@ -268,6 +279,14 @@ export async function startTelegramWebhook(opts: {
     }).catch(() => {
       // withTelegramApiErrorLogging has already emitted the failure.
     });
+    // Stop exec approval handler before server cleanup
+    if (execApprovalHandler) {
+      try {
+        void execApprovalHandler.stop();
+      } catch {
+        // ignore
+      }
+    }
     server.close();
     void bot.stop();
     if (diagnosticsEnabled) {

@@ -61,7 +61,10 @@ const TELEGRAM_POLL_RESTART_POLICY = {
   jitter: 0.25,
 };
 
-type TelegramBot = ReturnType<typeof createTelegramBot>;
+import type { CreateTelegramBotResult } from "./bot.js";
+import type { TelegramExecApprovalHandler } from "./exec-approvals.js";
+
+type TelegramBot = CreateTelegramBotResult["bot"];
 
 const isGetUpdatesConflict = (err: unknown) => {
   if (!err || typeof err !== "object") {
@@ -212,9 +215,11 @@ export async function monitorTelegramProvider(opts: MonitorTelegramOpts = {}) {
       );
     };
 
-    const createPollingBot = async (): Promise<TelegramBot | undefined> => {
+    const createPollingBot = async (): Promise<
+      { bot: TelegramBot; execApprovalHandler: TelegramExecApprovalHandler | null } | undefined
+    > => {
       try {
-        return createTelegramBot({
+        const { bot, execApprovalHandler } = createTelegramBot({
           token,
           runtime: opts.runtime,
           proxyFetch,
@@ -225,6 +230,7 @@ export async function monitorTelegramProvider(opts: MonitorTelegramOpts = {}) {
             onUpdateId: persistUpdateId,
           },
         });
+        return { bot, execApprovalHandler };
       } catch (err) {
         const shouldRetry = await waitBeforeRetryOnRecoverableSetupError(
           err,
@@ -258,7 +264,19 @@ export async function monitorTelegramProvider(opts: MonitorTelegramOpts = {}) {
       }
     };
 
-    const runPollingCycle = async (bot: TelegramBot): Promise<"continue" | "exit"> => {
+    const runPollingCycle = async (
+      bot: TelegramBot,
+      execApprovalHandler: TelegramExecApprovalHandler | null,
+    ): Promise<"continue" | "exit"> => {
+      // Start exec approval handler before runner
+      if (execApprovalHandler) {
+        try {
+          await execApprovalHandler.start();
+        } catch (err) {
+          log(`[telegram] exec approvals start failed: ${formatErrorMessage(err)}`);
+        }
+      }
+
       const runner = run(bot, runnerOptions);
       activeRunner = runner;
       let stopPromise: Promise<void> | undefined;
@@ -308,15 +326,24 @@ export async function monitorTelegramProvider(opts: MonitorTelegramOpts = {}) {
         return shouldRestart ? "continue" : "exit";
       } finally {
         opts.abortSignal?.removeEventListener("abort", stopOnAbort);
+        // Stop handler before runner cleanup
+        if (execApprovalHandler) {
+          try {
+            await execApprovalHandler.stop();
+          } catch {
+            // ignore
+          }
+        }
         await stopRunner();
       }
     };
 
     while (!opts.abortSignal?.aborted) {
-      const bot = await createPollingBot();
-      if (!bot) {
+      const result = await createPollingBot();
+      if (!result) {
         continue;
       }
+      const { bot, execApprovalHandler } = result;
 
       const cleanupState = await ensureWebhookCleanup(bot);
       if (cleanupState === "retry") {
@@ -326,7 +353,7 @@ export async function monitorTelegramProvider(opts: MonitorTelegramOpts = {}) {
         return;
       }
 
-      const state = await runPollingCycle(bot);
+      const state = await runPollingCycle(bot, execApprovalHandler);
       if (state === "exit") {
         return;
       }
