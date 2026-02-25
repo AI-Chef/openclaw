@@ -12,6 +12,8 @@ import { resolveTelegramAccount } from "./accounts.js";
 import { resolveTelegramAllowedUpdates } from "./allowed-updates.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
 import { createTelegramBot } from "./bot.js";
+import type { CreateTelegramBotResult } from "./bot.js";
+import type { TelegramExecApprovalHandler } from "./exec-approvals.js";
 import { isRecoverableTelegramNetworkError } from "./network-errors.js";
 import { makeProxyFetch } from "./proxy.js";
 import { readTelegramUpdateOffset, writeTelegramUpdateOffset } from "./update-offset-store.js";
@@ -60,9 +62,6 @@ const TELEGRAM_POLL_RESTART_POLICY = {
   factor: 1.8,
   jitter: 0.25,
 };
-
-import type { CreateTelegramBotResult } from "./bot.js";
-import type { TelegramExecApprovalHandler } from "./exec-approvals.js";
 
 type TelegramBot = CreateTelegramBotResult["bot"];
 

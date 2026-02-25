@@ -16,6 +16,7 @@ import { defaultRuntime } from "../runtime.js";
 import { resolveTelegramAllowedUpdates } from "./allowed-updates.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
 import { createTelegramBot } from "./bot.js";
+import type { CreateTelegramBotResult } from "./bot.js";
 
 const TELEGRAM_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
 const TELEGRAM_WEBHOOK_BODY_TIMEOUT_MS = 30_000;
@@ -60,8 +61,6 @@ function resolveWebhookPublicUrl(params: {
   const fallbackHost = params.host === "0.0.0.0" ? "localhost" : params.host;
   return `http://${fallbackHost}:${params.port}${params.path}`;
 }
-
-import type { CreateTelegramBotResult } from "./bot.js";
 
 async function initializeTelegramWebhookBot(params: {
   bot: CreateTelegramBotResult["bot"];
